@@ -5,8 +5,9 @@ import threading
 import time
 import sys
 import io
+import os  # pour self-ping si besoin
 
-# Force UTF-8 sur stdout/stderr sous Windows
+# Force UTF-8 sur stdout/stderr sous Windows (utile localement)
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
@@ -43,10 +44,11 @@ def init_mqtt_client():
             return
 
         try:
+            # VERSION2 par défaut (supprime le DeprecationWarning)
             client = mqtt.Client(
-                callback_api_version=mqtt.CallbackAPIVersion.VERSION1,
                 client_id=f"flask-kcomat-{int(time.time())}"
             )
+
             client.on_connect = on_connect
             client.username_pw_set(MQTT_USER, MQTT_PASS)
             client.tls_set()  # TLS obligatoire pour CloudAMQP port 8883
@@ -55,6 +57,7 @@ def init_mqtt_client():
             client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
             client.loop_start()
 
+            # Attente max 10s pour CONNACK
             if not connected_event.wait(timeout=10):
                 print("Timeout : pas de CONNACK reçu après 10s")
                 client.loop_stop()
@@ -122,16 +125,26 @@ def control():
     else:
         return jsonify({'success': False, 'message': 'Échec envoi MQTT'}), 503
 
-# Initialisation au démarrage
+# Optionnel : self-ping pour éviter le spin-down sur Render Free
+# Décommente si tu veux (mais UptimeRobot est mieux)
+"""
+def keep_alive():
+    url = os.getenv("RENDER_EXTERNAL_URL", "https://maison-commande.onrender.com")
+    while True:
+        try:
+            requests.get(url, timeout=10)
+            print("Self-ping envoyé")
+        except Exception as e:
+            print(f"Self-ping erreur: {e}")
+        time.sleep(600)  # 10 minutes
+
+if os.getenv("RENDER"):
+    threading.Thread(target=keep_alive, daemon=True).start()
+"""
+
+# Initialisation MQTT au démarrage
 init_mqtt_client()
 
 if __name__ == '__main__':
-    try:
-        app.run(debug=True, host='0.0.0.0', port=5000)
-    except KeyboardInterrupt:
-        print("Arrêt demandé par l'utilisateur")
-    finally:
-        if client is not None:
-            client.loop_stop()
-            client.disconnect()
-            print("Client MQTT déconnecté proprement")
+    # Pour développement local seulement (Render utilise gunicorn)
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
