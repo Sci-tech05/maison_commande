@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contrôle des Lampes</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: #222;
+            min-height: 100vh;
+            padding: 16px 12px;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: clamp(1.6rem, 5vw, 2.2rem);
+            margin: 24px 0 32px;
+            color: #1a1a1a;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .lampe {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+            transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transform: translateY(0);
+        }
+
+        .lampe:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            justify-content: center;
+        }
+
+        button {
+            flex: 1 1 160px;
+            padding: 18px 28px;
+            font-size: 1.15rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.28s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            touch-action: manipulation;
+        }
+
+        button:active {
+            transform: scale(0.96);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-on {
+            background: linear-gradient(135deg, #4caf50, #66bb6a);
+            color: white;
+        }
+
+        .btn-on:hover {
+            background: linear-gradient(135deg, #43a047, #5cb85c);
+            transform: translateY(-2px);
+        }
+
+        .btn-off {
+            background: linear-gradient(135deg, #f44336, #ef5350);
+            color: white;
+        }
+
+        .btn-off:hover {
+            background: linear-gradient(135deg, #e53935, #e64a19);
+            transform: translateY(-2px);
+        }
+
+        .status {
+            margin-top: 16px;
+            text-align: center;
+            font-weight: 500;
+            font-size: 1rem;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.4s ease;
+            min-height: 24px;
+        }
+
+        .status.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .success {
+            color: #2e7d32;
+        }
+
+        .error {
+            color: #c62828;
+        }
+
+        @media (min-width: 768px) {
+            .container {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+                gap: 28px;
+            }
+
+            .lampe {
+                margin-bottom: 0;
+            }
+        }
+
+        @media (max-width: 480px) {
+            button {
+                padding: 20px 32px;
+                font-size: 1.25rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Contrôle des Lampes</h1>
+
+        <div class="lampe">
+            <h2>Devanture</h2>
+            <div class="buttons">
+                <button class="btn-on" data-lampe="devanture" data-action="ON">Allumer</button>
+                <button class="btn-off" data-lampe="devanture" data-action="OFF">Éteindre</button>
+            </div>
+            <div class="status" id="status-devanture"></div>
+        </div>
+
+        <div class="lampe">
+            <h2>Salon</h2>
+            <div class="buttons">
+                <button class="btn-on" data-lampe="salon" data-action="ON">Allumer</button>
+                <button class="btn-off" data-lampe="salon" data-action="OFF">Éteindre</button>
+            </div>
+            <div class="status" id="status-salon"></div>
+        </div>
+
+        <div class="lampe">
+            <h2>Chambre</h2>
+            <div class="buttons">
+                <button class="btn-on" data-lampe="chambre" data-action="ON">Allumer</button>
+                <button class="btn-off" data-lampe="chambre" data-action="OFF">Éteindre</button>
+            </div>
+            <div class="status" id="status-chambre"></div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            $('.btn-on, .btn-off').click(function () {
+                const lampe = $(this).data('lampe');
+                const action = $(this).data('action');
+                const statusDiv = $('#status-' + lampe);
+
+                // Reset et préparation
+                statusDiv
+                    .removeClass('success error visible')
+                    .text('Envoi en cours...')
+                    .addClass('visible');
+
+                $.ajax({
+                    url: '/control',
+                    type: 'POST',
+                    data: { lampe: lampe, action: action },
+                    dataType: 'json',
+                    timeout: 7000,
+                    success: function (response) {
+                        let msg = response.message || (response.success ? action + ' envoyé' : 'Échec');
+                        let className = response.success ? 'success' : 'error';
+
+                        statusDiv
+                            .removeClass('success error')
+                            .addClass(className)
+                            .text(msg);
+
+                        // Disparition automatique après 2 secondes
+                        setTimeout(() => {
+                            statusDiv.removeClass('visible');
+                            setTimeout(() => statusDiv.text(''), 400); // nettoyage après fondu
+                        }, 2000);
+                    },
+                    error: function () {
+                        statusDiv
+                            .removeClass('success')
+                            .addClass('error')
+                            .text('Erreur de connexion');
+
+                        setTimeout(() => {
+                            statusDiv.removeClass('visible');
+                            setTimeout(() => statusDiv.text(''), 400);
+                        }, 2000);
+                    }
+                });
+            });
+        });
+    </script>
+
+</body>
+
+</html>
