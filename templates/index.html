@@ -6,229 +6,125 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Contrôle des Lampes</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/js/all.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            color: #222;
-            min-height: 100vh;
-            padding: 16px 12px;
+            background: linear-gradient(to bottom right, #f3f4f6, #e5e7eb);
         }
 
-        .container {
-            max-width: 960px;
-            margin: 0 auto;
-        }
-
-        h1 {
-            text-align: center;
-            font-size: clamp(1.6rem, 5vw, 2.2rem);
-            margin: 24px 0 32px;
-            color: #1a1a1a;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-
-        .lampe {
-            background: white;
-            border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 24px;
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
-            transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-            transform: translateY(0);
-        }
-
-        .lampe:hover {
-            transform: translateY(-6px);
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
-        }
-
-        h2 {
-            font-size: 1.5rem;
-            margin-bottom: 20px;
-            color: #333;
-        }
-
-        .buttons {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            justify-content: center;
-        }
-
-        button {
-            flex: 1 1 160px;
-            padding: 18px 28px;
-            font-size: 1.15rem;
-            font-weight: 600;
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.28s ease;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            touch-action: manipulation;
-        }
-
-        button:active {
-            transform: scale(0.96);
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-        }
-
-        .btn-on {
-            background: linear-gradient(135deg, #4caf50, #66bb6a);
-            color: white;
-        }
-
-        .btn-on:hover {
-            background: linear-gradient(135deg, #43a047, #5cb85c);
-            transform: translateY(-2px);
-        }
-
-        .btn-off {
-            background: linear-gradient(135deg, #f44336, #ef5350);
-            color: white;
-        }
-
-        .btn-off:hover {
-            background: linear-gradient(135deg, #e53935, #e64a19);
-            transform: translateY(-2px);
-        }
-
-        .status {
-            margin-top: 16px;
-            text-align: center;
-            font-weight: 500;
-            font-size: 1rem;
-            opacity: 0;
-            transform: translateY(10px);
-            transition: all 0.4s ease;
-            min-height: 24px;
-        }
-
-        .status.visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        .success {
-            color: #2e7d32;
-        }
-
-        .error {
-            color: #c62828;
-        }
-
-        @media (min-width: 768px) {
-            .container {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-                gap: 28px;
-            }
-
-            .lampe {
-                margin-bottom: 0;
-            }
-        }
-
-        @media (max-width: 480px) {
-            button {
-                padding: 20px 32px;
-                font-size: 1.25rem;
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: linear-gradient(to bottom right, #111827, #1f2937);
+                color: #f3f4f6;
             }
         }
     </style>
 </head>
 
-<body>
+<body class="min-h-screen font-sans antialiased">
 
-    <div class="container">
-        <h1>Contrôle des Lampes</h1>
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800 dark:text-gray-100">
+                <i class="fas fa-lightbulb text-yellow-500 mr-3"></i> Contrôle des Lampes
+            </h1>
+            <p class="mt-3 text-gray-600 dark:text-gray-400">Pilotage tactile</p>
+        </header>
 
-        <div class="lampe">
-            <h2>Devanture</h2>
-            <div class="buttons">
-                <button class="btn-on" data-lampe="devanture" data-action="ON">Allumer</button>
-                <button class="btn-off" data-lampe="devanture" data-action="OFF">Éteindre</button>
-            </div>
-            <div class="status" id="status-devanture"></div>
+        <div class="mb-10 text-center">
+            <p id="status" class="text-lg font-medium text-gray-700 dark:text-gray-300">Connecté au serveur...</p>
         </div>
 
-        <div class="lampe">
-            <h2>Salon</h2>
-            <div class="buttons">
-                <button class="btn-on" data-lampe="salon" data-action="ON">Allumer</button>
-                <button class="btn-off" data-lampe="salon" data-action="OFF">Éteindre</button>
-            </div>
-            <div class="status" id="status-salon"></div>
+        <div class="mb-10 text-center">
+            <button id="btn-all"
+                class="px-10 py-5 rounded-2xl font-bold text-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl transition">
+                🔆 Allumer toutes les lampes
+            </button>
         </div>
 
-        <div class="lampe">
-            <h2>Chambre</h2>
-            <div class="buttons">
-                <button class="btn-on" data-lampe="chambre" data-action="ON">Allumer</button>
-                <button class="btn-off" data-lampe="chambre" data-action="OFF">Éteindre</button>
-            </div>
-            <div class="status" id="status-chambre"></div>
-        </div>
+        <div id="lamps-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
     </div>
 
     <script>
-        $(document).ready(function () {
-            $('.btn-on, .btn-off').click(function () {
-                const lampe = $(this).data('lampe');
-                const action = $(this).data('action');
-                const statusDiv = $('#status-' + lampe);
+        const lampNames = ["Devanture", "Salon", "Chambre"];
+        let lampStates = [false, false, false];
 
-                // Reset et préparation
-                statusDiv
-                    .removeClass('success error visible')
-                    .text('Envoi en cours...')
-                    .addClass('visible');
+        const socket = io();
 
-                $.ajax({
-                    url: '/control',
-                    type: 'POST',
-                    data: { lampe: lampe, action: action },
-                    dataType: 'json',
-                    timeout: 7000,
-                    success: function (response) {
-                        let msg = response.message || (response.success ? action + ' envoyé' : 'Échec');
-                        let className = response.success ? 'success' : 'error';
-
-                        statusDiv
-                            .removeClass('success error')
-                            .addClass(className)
-                            .text(msg);
-
-                        // Disparition automatique après 2 secondes
-                        setTimeout(() => {
-                            statusDiv.removeClass('visible');
-                            setTimeout(() => statusDiv.text(''), 400); // nettoyage après fondu
-                        }, 2000);
-                    },
-                    error: function () {
-                        statusDiv
-                            .removeClass('success')
-                            .addClass('error')
-                            .text('Erreur de connexion');
-
-                        setTimeout(() => {
-                            statusDiv.removeClass('visible');
-                            setTimeout(() => statusDiv.text(''), 400);
-                        }, 2000);
-                    }
-                });
+        function generateLamps() {
+            let html = '';
+            lampNames.forEach((name, i) => {
+                html += `
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform transition hover:scale-[1.03] duration-200">
+                    <div class="p-6 text-center">
+                        <div class="text-6xl mb-5" id="icon-${i}"><i class="fas fa-lightbulb text-gray-400"></i></div>
+                        <h3 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">${name}</h3>
+                        <p class="text-md text-gray-500 dark:text-gray-300 mb-6">Lampe ${i + 1}</p>
+                        <button onclick="toggleLamp(${i})" id="btn-${i}" class="w-full py-5 px-8 rounded-xl font-bold text-lg bg-gray-600 hover:bg-gray-700 text-white transition shadow-lg">ÉTAT...</button>
+                    </div>
+                </div>`;
             });
+            $('#lamps-grid').html(html);
+            updateAllButtonText();
+        }
+
+        function updateLampButton(idx, isOn) {
+            lampStates[idx] = isOn;
+            const btn = $(`#btn-${idx}`);
+            const icon = $(`#icon-${idx}`);
+            if (isOn) {
+                btn.removeClass("bg-gray-600 hover:bg-gray-700").addClass("bg-green-600 hover:bg-green-700").text("ALLUMÉE");
+                icon.html('<i class="fas fa-lightbulb text-yellow-400 animate-pulse"></i>');
+            } else {
+                btn.removeClass("bg-green-600 hover:bg-green-700").addClass("bg-gray-600 hover:bg-gray-700").text("ÉTEINTE");
+                icon.html('<i class="fas fa-lightbulb text-gray-400"></i>');
+            }
+            updateAllButtonText();
+        }
+
+        function areAllLampsOn() { return lampStates.every(v => v === true); }
+        function updateAllButtonText() {
+            const btnAll = $("#btn-all");
+            if (areAllLampsOn()) {
+                btnAll.text("🌙 Éteindre toutes les lampes").removeClass("bg-indigo-600 hover:bg-indigo-700").addClass("bg-gray-700 hover:bg-gray-800");
+            } else {
+                btnAll.text("🔆 Allumer toutes les lampes").removeClass("bg-gray-700 hover:bg-gray-800").addClass("bg-indigo-600 hover:bg-indigo-700");
+            }
+        }
+
+        function toggleLamp(idx) {
+            const lampMapping = ["devanture", "salon", "chambre"];
+            const lampName = lampMapping[idx];
+            const action = lampStates[idx] ? "OFF" : "ON";
+
+            $.post('/control', { lampe: lampName, action: action }, function (res) {
+                // mise à jour via WebSocket, donc pas besoin de updateLampButton ici
+            }).fail(function () { alert("Erreur de connexion"); });
+        }
+
+        function toggleAllLamps() {
+            const allOn = areAllLampsOn();
+            lampStates.forEach((state, i) => {
+                const action = allOn ? "OFF" : "ON";
+                const lampMapping = ["devanture", "salon", "chambre"];
+                $.post('/control', { lampe: lampMapping[i], action: action });
+            });
+        }
+
+        // ⚡ Écoute WebSocket pour mises à jour en temps réel
+        socket.on('lamp_update', function (data) {
+            const lampMapping = ["devanture", "salon", "chambre"];
+            const idx = lampMapping.indexOf(data.lampe);
+            if (idx >= 0) updateLampButton(idx, data.action === "ON");
+        });
+
+        $(document).ready(function () {
+            generateLamps();
+            $("#btn-all").click(toggleAllLamps);
         });
     </script>
-
 </body>
-
 
 </html>
