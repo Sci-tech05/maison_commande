@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
 from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO
 import paho.mqtt.client as mqtt
 import threading
 import time
 import sys
 import io
-import os  # pour self-ping si besoin
 
-# Force UTF-8 sur stdout/stderr sous Windows (utile localement)
+# Force UTF-8 sur stdout/stderr sous Windows
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")  # ⚡ WebSocket
 
 # ── Configuration CloudAMQP ──
 MQTT_BROKER = "fuji.lmq.cloudamqp.com"
@@ -29,6 +30,7 @@ client = None
 client_lock = threading.Lock()
 connected_event = threading.Event()
 
+# ── MQTT Callbacks ──
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
         print("MQTT - Connexion réussie (CONNACK reçu)")
@@ -44,20 +46,18 @@ def init_mqtt_client():
             return
 
         try:
-            # VERSION2 par défaut (supprime le DeprecationWarning)
             client = mqtt.Client(
+                callback_api_version=mqtt.CallbackAPIVersion.VERSION1,
                 client_id=f"flask-kcomat-{int(time.time())}"
             )
-
             client.on_connect = on_connect
             client.username_pw_set(MQTT_USER, MQTT_PASS)
-            client.tls_set()  # TLS obligatoire pour CloudAMQP port 8883
+            client.tls_set()  # TLS obligatoire
 
             print("Tentative de connexion MQTT...")
             client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
             client.loop_start()
 
-            # Attente max 10s pour CONNACK
             if not connected_event.wait(timeout=10):
                 print("Timeout : pas de CONNACK reçu après 10s")
                 client.loop_stop()
@@ -84,7 +84,6 @@ def publish_message(topic, message):
     try:
         result = client.publish(topic, message, qos=1)
         result.wait_for_publish(timeout=5.0)
-
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
             print(f"Message publié OK sur {topic} : {message}")
             return True
@@ -121,30 +120,14 @@ def control():
     success = publish_message(topic, action)
 
     if success:
+        # ⚡ envoi WebSocket aux clients pour mise à jour temps réel
+        socketio.emit('lamp_update', {'lampe': lampe, 'action': action})
         return jsonify({'success': True, 'message': f'{action} envoyé'}), 200
     else:
         return jsonify({'success': False, 'message': 'Échec envoi MQTT'}), 503
 
-# Optionnel : self-ping pour éviter le spin-down sur Render Free
-# Décommente si tu veux (mais UptimeRobot est mieux)
-"""
-def keep_alive():
-    url = os.getenv("RENDER_EXTERNAL_URL", "https://maison-commande.onrender.com")
-    while True:
-        try:
-            requests.get(url, timeout=10)
-            print("Self-ping envoyé")
-        except Exception as e:
-            print(f"Self-ping erreur: {e}")
-        time.sleep(600)  # 10 minutes
-
-if os.getenv("RENDER"):
-    threading.Thread(target=keep_alive, daemon=True).start()
-"""
-
-# Initialisation MQTT au démarrage
+# Initialisation au démarrage
 init_mqtt_client()
 
 if __name__ == '__main__':
-    # Pour développement local seulement (Render utilise gunicorn)
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
