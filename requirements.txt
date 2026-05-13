@@ -1,0 +1,5 @@
+﻿flask
+paho-mqtt
+flask-socketio
+eventlet
+requests

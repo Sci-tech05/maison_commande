@@ -1,0 +1,293 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion | Smart Home Control</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-1: #061321;
+            --bg-2: #0c2a42;
+            --bg-3: #123b52;
+            --card: rgba(7, 26, 45, 0.72);
+            --border: rgba(143, 200, 255, 0.32);
+            --text-main: #ecf7ff;
+            --text-soft: #b8d7ee;
+            --accent: #33d6c8;
+            --accent-2: #18a3ff;
+            --danger: #ff7f99;
+            --shadow: 0 24px 70px rgba(0, 5, 11, 0.45);
+            --page-bg:
+                radial-gradient(circle at 15% 18%, rgba(51, 214, 200, 0.28), transparent 35%),
+                radial-gradient(circle at 86% 12%, rgba(24, 163, 255, 0.32), transparent 39%),
+                linear-gradient(140deg, var(--bg-1), var(--bg-2) 58%, var(--bg-3));
+            --shell-bg: rgba(4, 16, 28, 0.75);
+            --field-bg: rgba(236, 247, 255, 0.06);
+            --field-border: rgba(184, 215, 238, 0.34);
+        }
+
+        [data-theme="light"] {
+            --bg-1: #e8f4ff;
+            --bg-2: #f7fbff;
+            --bg-3: #dcedff;
+            --card: rgba(255, 255, 255, 0.82);
+            --border: rgba(74, 142, 186, 0.28);
+            --text-main: #12324a;
+            --text-soft: #557994;
+            --danger: #d7416a;
+            --shadow: 0 16px 44px rgba(20, 71, 102, 0.18);
+            --page-bg:
+                radial-gradient(circle at 15% 20%, rgba(64, 177, 160, 0.22), transparent 33%),
+                radial-gradient(circle at 86% 12%, rgba(82, 162, 233, 0.28), transparent 36%),
+                linear-gradient(150deg, #f1f8ff, #e8f2ff 55%, #f8fbff);
+            --shell-bg: rgba(252, 253, 255, 0.88);
+            --field-bg: rgba(24, 98, 136, 0.05);
+            --field-border: rgba(70, 130, 168, 0.36);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Manrope", sans-serif;
+            color: var(--text-main);
+            background: var(--page-bg);
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+
+        .auth-shell {
+            width: min(980px, 100%);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: 1.1fr 1fr;
+            background: var(--shell-bg);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(10px);
+        }
+
+        .auth-cover {
+            position: relative;
+            padding: 56px 50px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0)),
+                linear-gradient(120deg, rgba(51, 214, 200, 0.18), rgba(24, 163, 255, 0.15));
+        }
+
+        .auth-cover h1 {
+            margin: 0 0 10px;
+            font-family: "Outfit", sans-serif;
+            font-size: clamp(1.8rem, 3vw, 2.6rem);
+            line-height: 1.1;
+        }
+
+        .auth-cover p {
+            margin: 0;
+            color: var(--text-soft);
+            line-height: 1.6;
+            max-width: 32ch;
+        }
+
+        .chip {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            background: rgba(236, 247, 255, 0.12);
+            border: 1px solid rgba(236, 247, 255, 0.22);
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-weight: 600;
+            margin-bottom: 28px;
+            font-size: 0.9rem;
+        }
+
+        .auth-form {
+            padding: 48px 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background: var(--card);
+        }
+
+        .auth-form h2 {
+            margin: 0 0 24px;
+            font-family: "Outfit", sans-serif;
+            letter-spacing: 0.02em;
+            font-size: 1.65rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 7px;
+            font-size: 0.95rem;
+            color: var(--text-soft);
+            font-weight: 600;
+        }
+
+        .field {
+            margin-bottom: 16px;
+        }
+
+        input {
+            width: 100%;
+            border: 1px solid var(--field-border);
+            border-radius: 14px;
+            font-size: 1rem;
+            background: var(--field-bg);
+            color: var(--text-main);
+            padding: 14px 15px;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        input:focus {
+            border-color: rgba(51, 214, 200, 0.9);
+            box-shadow: 0 0 0 4px rgba(51, 214, 200, 0.17);
+        }
+
+        button {
+            margin-top: 8px;
+            width: 100%;
+            border: none;
+            border-radius: 14px;
+            padding: 14px;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #072031;
+            background: linear-gradient(130deg, var(--accent), #7de5cb 52%, #9feeff);
+            cursor: pointer;
+            transition: transform 0.2s ease, filter 0.2s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            filter: saturate(1.06);
+        }
+
+        .flash {
+            margin-bottom: 14px;
+            padding: 11px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 127, 153, 0.5);
+            background: rgba(255, 127, 153, 0.15);
+            color: #ffd5df;
+            font-size: 0.95rem;
+        }
+
+        .help {
+            margin-top: 14px;
+            color: var(--text-soft);
+            font-size: 0.9rem;
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--shell-bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+        }
+
+        @media (max-width: 900px) {
+            .auth-shell {
+                grid-template-columns: 1fr;
+            }
+            .auth-cover {
+                padding: 34px 28px;
+            }
+            .auth-form {
+                padding: 30px 22px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Activer le mode clair">
+        <i id="theme-icon" class="fa-solid fa-moon"></i>
+    </button>
+    <section class="auth-shell">
+        <aside class="auth-cover">
+            <h1>Pilotage intelligent de la maison</h1>
+            <p>
+                Accès sécurisé au tableau de contrôle temps réel et à la section vidéo ESP32-CAM.
+                Connexion obligatoire avant toute action.
+            </p>
+        </aside>
+
+        <main class="auth-form">
+            <h2>Connexion Administrateur</h2>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('login') }}">
+                <div class="field">
+                    <label for="username">Nom d'utilisateur</label>
+                    <input id="username" name="username" type="text" autocomplete="username" required>
+                </div>
+
+                <div class="field">
+                    <label for="password">Mot de passe</label>
+                    <input id="password" name="password" type="password" autocomplete="current-password" required>
+                </div>
+
+                <button type="submit">Se connecter</button>
+            </form>
+        </main>
+    </section>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/js/all.min.js"></script>
+    <script>
+        const THEME_KEY = "site-theme";
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute("data-theme", theme);
+            const isLight = theme === "light";
+            const icon = document.getElementById("theme-icon");
+            const btn = document.getElementById("theme-toggle");
+            icon.classList.remove("fa-moon", "fa-sun");
+            icon.classList.add(isLight ? "fa-sun" : "fa-moon");
+            btn.setAttribute("aria-label", isLight ? "Activer le mode sombre" : "Activer le mode clair");
+        }
+
+        function initTheme() {
+            const saved = localStorage.getItem(THEME_KEY);
+            applyTheme(saved === "light" ? "light" : "dark");
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute("data-theme") || "dark";
+            const next = current === "dark" ? "light" : "dark";
+            localStorage.setItem(THEME_KEY, next);
+            applyTheme(next);
+        }
+
+        initTheme();
+        document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+    </script>
+</body>
+</html>
