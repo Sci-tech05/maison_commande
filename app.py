@@ -8,6 +8,11 @@ import sys
 import threading
 import time
 import zipfile
+import cv2
+import numpy as np
+from imageio import get_writer
+import tempfile
+import subprocess
 from io import BytesIO
 from flask import send_file
 from datetime import datetime, timezone
@@ -514,6 +519,37 @@ def publish_message(topic, message):
         print(f"Erreur pendant publish : {exc}")
         return False
 
+def convert_frames_to_video(frames_data, output_path, fps=10):
+    """
+    Convertit une liste de frames JPEG en vidéo MP4
+    frames_data: liste de bytes (contenu JPEG)
+    output_path: chemin de sortie pour la vidéo
+    fps: images par seconde
+    """
+    if not frames_data:
+        return False
+    
+    # Décoder la première frame pour obtenir les dimensions
+    first_frame = cv2.imdecode(np.frombuffer(frames_data[0], np.uint8), cv2.IMREAD_COLOR)
+    if first_frame is None:
+        return False
+    
+    height, width = first_frame.shape[:2]
+    
+    # Utiliser imageio avec ffmpeg pour créer la vidéo
+    writer = get_writer(output_path, fps=fps, format='mp4', codec='libx264')
+    
+    for frame_data in frames_data:
+        # Décoder l'image JPEG
+        img = cv2.imdecode(np.frombuffer(frame_data, np.uint8), cv2.IMREAD_COLOR)
+        if img is not None:
+            # Convertir BGR (OpenCV) en RGB (imageio)
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            writer.append_data(img_rgb)
+    
+    writer.close()
+    return True
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -839,10 +875,10 @@ def esp32cam_snapshots_download_all():
 @app.route("/api/esp32cam/recordings/<int:recording_id>/download", methods=["GET"])
 @login_required
 def esp32cam_recording_download(recording_id):
-    """Télécharger une vidéo complète (toutes les frames dans un ZIP)"""
+    """Télécharger une vidéo complète au format MP4"""
     # Récupérer les infos de l'enregistrement
     recording = get_db().execute(
-        "SELECT id, started_at, frame_count FROM camera_recordings WHERE id = ?",
+        "SELECT id, started_at, frame_count, status FROM camera_recordings WHERE id = ?",
         (recording_id,),
     ).fetchone()
     
@@ -858,31 +894,47 @@ def esp32cam_recording_download(recording_id):
     if not frames:
         return jsonify({"success": False, "message": "Aucune frame trouvée"}), 404
     
-    # Créer le fichier ZIP avec toutes les frames
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for frame in frames:
-            filename = f"frame_{frame['frame_index']:06d}.jpg"
-            zip_file.writestr(filename, frame["frame_data"])
-        
-        # Ajouter un fichier info
-        info = f"Recording ID: {recording_id}\nStarted: {recording['started_at']}\nTotal frames: {recording['frame_count']}\n"
-        zip_file.writestr("info.txt", info)
+    # Créer un fichier temporaire pour la vidéo
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_file:
+        temp_video_path = tmp_file.name
     
-    zip_buffer.seek(0)
-    timestamp = recording['started_at'].replace(':', '-').replace('.', '-')
-    return send_file(
-        zip_buffer,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"recording_{recording_id}_{timestamp}.zip"
-    )
+    try:
+        # Convertir les frames en vidéo
+        frames_data = [frame["frame_data"] for frame in frames]
+        fps = 10  # 10 images par seconde (ajustable)
+        
+        success = convert_frames_to_video(frames_data, temp_video_path, fps)
+        
+        if not success:
+            return jsonify({"success": False, "message": "Erreur lors de la création de la vidéo"}), 500
+        
+        # Envoyer le fichier vidéo
+        timestamp = recording['started_at'].replace(':', '-').replace('.', '-')
+        filename = f"recording_{recording_id}_{timestamp}.mp4"
+        
+        return send_file(
+            temp_video_path,
+            mimetype="video/mp4",
+            as_attachment=True,
+            download_name=filename
+        )
+    
+    finally:
+        # Nettoyer le fichier temporaire après l'envoi
+        def cleanup():
+            try:
+                os.unlink(temp_video_path)
+            except:
+                pass
+        # Planifier le nettoyage (Flask le fera après l'envoi)
+        if hasattr(request, 'after_request'):
+            request.after_request(lambda response: cleanup() or response)
 
 
 @app.route("/api/esp32cam/recordings/download/all", methods=["GET"])
 @login_required
 def esp32cam_recordings_download_all():
-    """Télécharger toutes les vidéos dans un fichier ZIP"""
+    """Télécharger toutes les vidéos dans un fichier ZIP (chaque vidéo en MP4)"""
     recordings = get_db().execute(
         "SELECT id, started_at, frame_count FROM camera_recordings WHERE status = 'completed' ORDER BY id DESC"
     ).fetchall()
@@ -891,32 +943,50 @@ def esp32cam_recordings_download_all():
         return jsonify({"success": False, "message": "Aucun enregistrement disponible"}), 404
     
     zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for recording in recordings:
-            # Créer un sous-dossier pour chaque enregistrement
-            folder_name = f"recording_{recording['id']}_{recording['started_at'].replace(':', '-').replace('.', '-')}"
-            
-            # Récupérer les frames de cet enregistrement
-            frames = get_db().execute(
-                "SELECT frame_index, frame_data FROM camera_frames WHERE recording_id = ? ORDER BY frame_index ASC",
-                (recording['id'],),
-            ).fetchall()
-            
-            for frame in frames:
-                filename = f"{folder_name}/frame_{frame['frame_index']:06d}.jpg"
-                zip_file.writestr(filename, frame["frame_data"])
-            
-            # Ajouter un fichier info
-            info = f"Recording ID: {recording['id']}\nStarted: {recording['started_at']}\nTotal frames: {recording['frame_count']}\n"
-            zip_file.writestr(f"{folder_name}/info.txt", info)
+    temp_videos = []
     
-    zip_buffer.seek(0)
-    return send_file(
-        zip_buffer,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"all_recordings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-    )
+    try:
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for recording in recordings:
+                # Récupérer les frames
+                frames = get_db().execute(
+                    "SELECT frame_data FROM camera_frames WHERE recording_id = ? ORDER BY frame_index ASC",
+                    (recording['id'],),
+                ).fetchall()
+                
+                if not frames:
+                    continue
+                
+                # Créer un fichier temporaire pour la vidéo
+                with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_file:
+                    temp_video_path = tmp_file.name
+                    temp_videos.append(temp_video_path)
+                
+                # Convertir en vidéo
+                frames_data = [frame["frame_data"] for frame in frames]
+                success = convert_frames_to_video(frames_data, temp_video_path, fps=10)
+                
+                if success:
+                    # Ajouter la vidéo au ZIP
+                    video_filename = f"recording_{recording['id']}_{recording['started_at'].replace(':', '-').replace('.', '-')}.mp4"
+                    with open(temp_video_path, 'rb') as video_file:
+                        zip_file.writestr(video_filename, video_file.read())
+        
+        zip_buffer.seek(0)
+        return send_file(
+            zip_buffer,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"all_recordings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        )
+    
+    finally:
+        # Nettoyer les fichiers temporaires
+        for temp_path in temp_videos:
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
 
 @app.route("/api/esp32cam/recordings/<int:recording_id>/stream", methods=["GET"])
 @login_required
@@ -959,6 +1029,36 @@ def esp32cam_recording_snapshot(recording_id):
         return jsonify({"success": False, "message": "Aucune image pour cet enregistrement"}), 404
 
     return Response(row["frame_data"], mimetype="image/jpeg")
+
+
+@app.route("/api/esp32cam/recordings/config", methods=["GET", "POST"])
+@api_login_required
+def esp32cam_recordings_config():
+    """Configurer les paramètres d'enregistrement vidéo"""
+    if request.method == "GET":
+        # Lire la configuration
+        config = get_db().execute(
+            "SELECT value FROM app_config WHERE key = 'video_fps'"
+        ).fetchone()
+        fps = int(config["value"]) if config else 10
+        
+        return jsonify({
+            "success": True,
+            "fps": fps
+        })
+    
+    else:
+        # Mettre à jour la configuration
+        data = request.get_json(silent=True) or {}
+        fps = data.get("fps", 10)
+        
+        get_db().execute(
+            "INSERT OR REPLACE INTO app_config (key, value) VALUES ('video_fps', ?)",
+            (str(fps),)
+        )
+        get_db().commit()
+        
+        return jsonify({"success": True, "message": "Configuration mise à jour"})
 
 
 @app.route("/api/esp32cam/snapshot", methods=["POST"])
