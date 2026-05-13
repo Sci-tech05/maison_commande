@@ -223,9 +223,8 @@
 
         .stream-box img {
             width: 100%;
-            height: auto;
-            min-height: 260px;
-            object-fit: contain;
+            height: 100%;
+            object-fit: cover;
             display: block;
         }
 
@@ -340,21 +339,6 @@
             color: var(--text-main);
         }
 
-        .connection-status {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 8px 12px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            background: var(--surface);
-            border: 1px solid var(--line);
-            z-index: 100;
-        }
-
-        .connection-status.connected { color: var(--success); }
-        .connection-status.disconnected { color: var(--danger); }
-
         @media (max-width: 980px) {
             .camera-grid { grid-template-columns: 1fr; }
         }
@@ -398,20 +382,24 @@
         <main class="grid">
             <section class="panel">
                 <h2>Éclairage & Prises</h2>
+
                 <div class="status" id="status">Connexion au serveur...</div>
+
                 <div class="action-row">
                     <button id="btn-all" class="btn-primary"><i class="fa-solid fa-bolt"></i> Allumer tout</button>
                 </div>
+
                 <div id="lamps-grid" class="lamp-grid"></div>
             </section>
 
             <section class="panel">
                 <h2>CAMERA MAISON</h2>
+
                 <div class="camera-grid">
                     <div>
                         <div class="stream-box" id="stream-box">
-                            <img id="live-stream" src="" alt="Flux ESP32-CAM" style="display:none;">
-                            <div class="stream-placeholder" id="stream-placeholder">En attente du flux WebSocket...</div>
+                            <img id="live-stream" src="/esp32cam/live?ts={{ range(1000000,9999999) | random }}" alt="Flux ESP32-CAM">
+                            <div class="stream-placeholder" id="stream-placeholder" style="display:none;">En attente des frames MQTT...</div>
                         </div>
 
                         <div class="action-row">
@@ -431,10 +419,12 @@
 
                     <div>
                         <h3 style="margin:0 0 8px; font-family:'Outfit',sans-serif;">HISTORIQUES</h3>
+
                         <div style="margin-top:10px;">
                             <strong style="font-size:0.95rem;">Vidéos</strong>
                             <div id="recordings-list" class="list"></div>
                         </div>
+
                         <div style="margin-top:12px;">
                             <strong style="font-size:0.95rem;">Captures</strong>
                             <div id="snapshots-list" class="list"></div>
@@ -443,10 +433,6 @@
                 </div>
             </section>
         </main>
-    </div>
-
-    <div id="connection-status" class="connection-status disconnected">
-        <i class="fa-solid fa-circle"></i> Déconnecté
     </div>
 
     <div id="password-modal" class="modal-backdrop" aria-hidden="true">
@@ -484,8 +470,6 @@
 
         const socket = io();
         const THEME_KEY = "site-theme";
-        let socketConnected = false;
-        let currentDeviceId = "esp32cam-1";
 
         function applyTheme(theme) {
             document.documentElement.setAttribute("data-theme", theme);
@@ -506,17 +490,6 @@
             const next = current === "dark" ? "light" : "dark";
             localStorage.setItem(THEME_KEY, next);
             applyTheme(next);
-        }
-
-        function updateConnectionStatus(connected) {
-            const statusDiv = $("#connection-status");
-            if (connected) {
-                statusDiv.removeClass("disconnected").addClass("connected");
-                statusDiv.html('<i class="fa-solid fa-circle"></i> Connecté');
-            } else {
-                statusDiv.removeClass("connected").addClass("disconnected");
-                statusDiv.html('<i class="fa-solid fa-circle"></i> Déconnecté');
-            }
         }
 
         function setCamMessage(text, type = "") {
@@ -641,93 +614,48 @@
             });
         }
 
-        function sendCommandToESP32(command) {
-            if (!socketConnected) {
-                setCamMessage("WebSocket non connecté, utilisation de l'API REST", "error");
-                return false;
+        socket.on("lamp_update", (data) => {
+            const idx = lampMapping.indexOf(data.lampe);
+            if (idx >= 0) updateLampButton(idx, data.action === "ON");
+        });
+
+        socket.on("cam_status", (data) => {
+            if (data?.received_at) {
+                $("#last-frame").text(data.received_at);
             }
-            
-            socket.emit('command_to_esp32', {
-                device_id: currentDeviceId,
-                command: command
-            });
-            return true;
+            if (data?.last_frame_size) {
+                $("#frame-size").text(`${data.last_frame_size} bytes`);
+            }
+        });
+
+        function restartLiveStream() {
+            const img = $("#live-stream");
+            img.attr("src", "/esp32cam/live?ts=" + Date.now());
+            $("#stream-placeholder").hide();
+            img.show();
         }
 
-        function initWebSocketStream() {
-            socket.on('connect', () => {
-                console.log('WebSocket connecté');
-                socketConnected = true;
-                updateConnectionStatus(true);
-                
-                socket.emit('subscribe_camera', { device_id: currentDeviceId });
-            });
-            
-            socket.on('connection_response', (data) => {
-                console.log('Connection response:', data);
-            });
-            
-            socket.on('new_frame', (data) => {
-                if (data.device_id === currentDeviceId && data.frame) {
-                    const img = document.getElementById('live-stream');
-                    img.src = 'data:image/jpeg;base64,' + data.frame;
-                    img.style.display = 'block';
-                    document.getElementById('stream-placeholder').style.display = 'none';
-                }
-            });
-            
-            socket.on('cam_status', (data) => {
-                if (data.last_frame_size) {
-                    console.log(`Frame reçue: ${data.last_frame_size} bytes`);
-                }
-            });
-            
-            socket.on('subscribed', (data) => {
-                console.log('Abonné au flux:', data.device_id);
-                setCamMessage(`Connecté au flux ${data.device_id}`, "success");
-            });
-            
-            socket.on('command_ack', (data) => {
-                if (data.status === 'sent') {
-                    setCamMessage(`Commande ${data.command} envoyée à l'ESP32`, "success");
-                } else {
-                    setCamMessage(`Erreur: ${data.message}`, "error");
-                }
-            });
-            
-            socket.on('disconnect', () => {
-                console.log('WebSocket déconnecté');
-                socketConnected = false;
-                updateConnectionStatus(false);
-                setCamMessage("WebSocket déconnecté", "error");
+        function loadCameraConfig() {
+            $.getJSON("/api/esp32cam/config", (res) => {
+                if (!res.success) return;
+                $("#device-id").val(res.device_id || "esp32cam-1");
+                $("#frame-topic").text(res.frame_topic || "-");
+                $("#status-topic").text(res.status_topic || "-");
             });
         }
 
+        
         function startRecording() {
-            if (socketConnected) {
-                sendCommandToESP32('start_recording');
-                $.post("/api/esp32cam/record/start", (res) => {
-                    setCamMessage(res.message || "Enregistrement démarré.", "success");
-                    loadRecordings();
-                }).fail((xhr) => {
-                    const msg = xhr.responseJSON?.message || "Impossible de démarrer";
-                    setCamMessage(msg, "error");
-                });
-            } else {
-                $.post("/api/esp32cam/record/start", (res) => {
-                    setCamMessage(res.message || "Enregistrement démarré.", "success");
-                    loadRecordings();
-                }).fail((xhr) => {
-                    const msg = xhr.responseJSON?.message || "Impossible de démarrer";
-                    setCamMessage(msg, "error");
-                });
-            }
+            $.post("/api/esp32cam/record/start", (res) => {
+                setCamMessage(res.message || "Enregistrement démarré.", "success");
+                loadRecordings();
+            }).fail((xhr) => {
+                const msg = xhr.responseJSON?.message || "Impossible de démarrer";
+                setCamMessage(msg, "error");
+            });
         }
 
         function stopRecording() {
-            if (socketConnected) {
-                sendCommandToESP32('stop_recording');
-            }
             $.post("/api/esp32cam/record/stop", (res) => {
                 setCamMessage(res.message || "Enregistrement arrêté.", "success");
                 loadRecordings();
@@ -738,9 +666,6 @@
         }
 
         function captureSnapshot() {
-            if (socketConnected) {
-                sendCommandToESP32('snapshot');
-            }
             $.post("/api/esp32cam/snapshot", (res) => {
                 setCamMessage(res.message || "Capture enregistrée.", "success");
                 loadSnapshots();
@@ -778,6 +703,7 @@
             });
         }
 
+
         function loadSnapshots() {
             $.getJSON("/api/esp32cam/snapshots", (res) => {
                 const box = $("#snapshots-list");
@@ -803,27 +729,40 @@
         function loadCamRuntimeStatus() {
             $.getJSON("/api/esp32cam/status", (res) => {
                 if (!res.success) return;
+                const stream = res.stream || {};
+                if (stream.last_received_at) {
+                    $("#last-frame").text(stream.last_received_at);
+                }
+                if (stream.last_frame_size) {
+                    $("#frame-size").text(`${stream.last_frame_size} bytes`);
+                }
             });
         }
 
+        // Télécharger une seule photo
         function downloadSnapshot(snapshotId) {
             window.location.href = `/api/esp32cam/snapshots/${snapshotId}/download`;
         }
 
+        // Télécharger une vidéo spécifique
         function downloadRecording(recordingId) {
             window.location.href = `/api/esp32cam/recordings/${recordingId}/download`;
         }
 
+        // Télécharger toutes les photos (fichier ZIP)
         function downloadAllSnapshots() {
             setCamMessage("Préparation du téléchargement des photos...", "success");
             
             $.ajax({
                 url: "/api/esp32cam/snapshots/download/all",
                 method: "GET",
-                xhrFields: { responseType: 'blob' },
+                xhrFields: {
+                    responseType: 'blob'
+                },
                 success: (data, status, xhr) => {
                     const disposition = xhr.getResponseHeader('Content-Disposition');
                     const filename = disposition ? disposition.split('filename=')[1].replace(/["']/g, '') : 'snapshots.zip';
+                    
                     const url = window.URL.createObjectURL(data);
                     const a = document.createElement('a');
                     a.href = url;
@@ -832,6 +771,7 @@
                     a.click();
                     window.URL.revokeObjectURL(url);
                     document.body.removeChild(a);
+                    
                     setCamMessage("Téléchargement des photos terminé !", "success");
                 },
                 error: (xhr) => {
@@ -841,16 +781,20 @@
             });
         }
 
+        // Télécharger toutes les vidéos (fichier ZIP)
         function downloadAllRecordings() {
             setCamMessage("Préparation du téléchargement des vidéos...", "success");
             
             $.ajax({
                 url: "/api/esp32cam/recordings/download/all",
                 method: "GET",
-                xhrFields: { responseType: 'blob' },
+                xhrFields: {
+                    responseType: 'blob'
+                },
                 success: (data, status, xhr) => {
                     const disposition = xhr.getResponseHeader('Content-Disposition');
                     const filename = disposition ? disposition.split('filename=')[1].replace(/["']/g, '') : 'recordings.zip';
+                    
                     const url = window.URL.createObjectURL(data);
                     const a = document.createElement('a');
                     a.href = url;
@@ -859,6 +803,7 @@
                     a.click();
                     window.URL.revokeObjectURL(url);
                     document.body.removeChild(a);
+                    
                     setCamMessage("Téléchargement des vidéos terminé !", "success");
                 },
                 error: (xhr) => {
@@ -872,6 +817,7 @@
             const confirmed = window.confirm("Supprimer les anciens enregistrements et captures (garder les 3 plus récents) ?");
             if (!confirmed) return;
 
+            // Nettoyer les vidéos
             $.ajax({
                 url: "/api/esp32cam/recordings/cleanup",
                 method: "POST",
@@ -881,6 +827,7 @@
                     setCamMessage(res.message || "Nettoyage des vidéos terminé.", "success");
                     loadRecordings();
                     
+                    // Nettoyer les snapshots
                     $.ajax({
                         url: "/api/esp32cam/snapshots/cleanup",
                         method: "POST",
@@ -903,11 +850,6 @@
             });
         }
 
-        socket.on("lamp_update", (data) => {
-            const idx = lampMapping.indexOf(data.lampe);
-            if (idx >= 0) updateLampButton(idx, data.action === "ON");
-        });
-
         $(document).ready(() => {
             initTheme();
             generateLamps();
@@ -919,12 +861,13 @@
             $("#password-close").on("click", closePasswordModal);
             $("#password-save").on("click", changePassword);
             $("#btn-all").on("click", toggleAllLamps);
+            $("#refresh-stream").on("click", restartLiveStream);
             $("#record-start").on("click", startRecording);
             $("#record-stop").on("click", stopRecording);
             $("#snapshot-btn").on("click", captureSnapshot);
             $("#cleanup-records").on("click", cleanupOldRecordings);
 
-            initWebSocketStream();
+            loadCameraConfig();
             loadRecordings();
             loadSnapshots();
             loadCamRuntimeStatus();
