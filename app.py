@@ -7,6 +7,9 @@ import sqlite3
 import sys
 import threading
 import time
+import zipfile
+from io import BytesIO
+from flask import send_file
 from datetime import datetime, timezone
 from functools import wraps
 
@@ -741,6 +744,179 @@ def esp32cam_recordings_cleanup():
         }
     )
 
+@app.route("/api/esp32cam/snapshots/cleanup", methods=["POST"])
+@api_login_required
+def esp32cam_snapshots_cleanup():
+    payload = request.get_json(silent=True) or {}
+    keep_last = payload.get("keep_last", 3)
+    try:
+        keep_last = max(0, int(keep_last))
+    except (TypeError, ValueError):
+        keep_last = 3
+
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT id
+        FROM camera_snapshots
+        ORDER BY id DESC
+        LIMIT -1 OFFSET ?
+        """,
+        (keep_last,),
+    ).fetchall()
+    ids_to_delete = [row["id"] for row in rows]
+
+    if not ids_to_delete:
+        return jsonify({
+            "success": True,
+            "deleted_snapshots": 0,
+            "message": "Aucune ancienne capture a supprimer.",
+        })
+
+    placeholders = ",".join("?" for _ in ids_to_delete)
+    db.execute(
+        f"DELETE FROM camera_snapshots WHERE id IN ({placeholders})",
+        ids_to_delete,
+    )
+    db.commit()
+
+    return jsonify({
+        "success": True,
+        "deleted_snapshots": len(ids_to_delete),
+        "message": f"{len(ids_to_delete)} capture(s) supprimee(s).",
+    })
+
+@app.route("/api/esp32cam/snapshots/<int:snapshot_id>/download", methods=["GET"])
+@login_required
+def esp32cam_snapshot_download(snapshot_id):
+    """Télécharger une photo individuelle"""
+    row = get_db().execute(
+        "SELECT frame_data, captured_at FROM camera_snapshots WHERE id = ?",
+        (snapshot_id,),
+    ).fetchone()
+    
+    if row is None:
+        return jsonify({"success": False, "message": "Capture introuvable"}), 404
+    
+    # Créer un nom de fichier avec la date
+    filename = f"snapshot_{snapshot_id}_{row['captured_at'].replace(':', '-').replace('.', '-')}.jpg"
+    
+    return send_file(
+        BytesIO(row["frame_data"]),
+        mimetype="image/jpeg",
+        as_attachment=True,
+        download_name=filename
+    )
+
+
+@app.route("/api/esp32cam/snapshots/download/all", methods=["GET"])
+@login_required
+def esp32cam_snapshots_download_all():
+    """Télécharger toutes les photos dans un fichier ZIP"""
+    rows = get_db().execute(
+        "SELECT id, frame_data, captured_at FROM camera_snapshots ORDER BY id DESC"
+    ).fetchall()
+    
+    if not rows:
+        return jsonify({"success": False, "message": "Aucune capture disponible"}), 404
+    
+    # Créer le fichier ZIP en mémoire
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for row in rows:
+            filename = f"snapshot_{row['id']}_{row['captured_at'].replace(':', '-').replace('.', '-')}.jpg"
+            zip_file.writestr(filename, row["frame_data"])
+    
+    zip_buffer.seek(0)
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"snapshots_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    )
+
+
+@app.route("/api/esp32cam/recordings/<int:recording_id>/download", methods=["GET"])
+@login_required
+def esp32cam_recording_download(recording_id):
+    """Télécharger une vidéo complète (toutes les frames dans un ZIP)"""
+    # Récupérer les infos de l'enregistrement
+    recording = get_db().execute(
+        "SELECT id, started_at, frame_count FROM camera_recordings WHERE id = ?",
+        (recording_id,),
+    ).fetchone()
+    
+    if recording is None:
+        return jsonify({"success": False, "message": "Enregistrement introuvable"}), 404
+    
+    # Récupérer toutes les frames
+    frames = get_db().execute(
+        "SELECT frame_index, frame_data FROM camera_frames WHERE recording_id = ? ORDER BY frame_index ASC",
+        (recording_id,),
+    ).fetchall()
+    
+    if not frames:
+        return jsonify({"success": False, "message": "Aucune frame trouvée"}), 404
+    
+    # Créer le fichier ZIP avec toutes les frames
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for frame in frames:
+            filename = f"frame_{frame['frame_index']:06d}.jpg"
+            zip_file.writestr(filename, frame["frame_data"])
+        
+        # Ajouter un fichier info
+        info = f"Recording ID: {recording_id}\nStarted: {recording['started_at']}\nTotal frames: {recording['frame_count']}\n"
+        zip_file.writestr("info.txt", info)
+    
+    zip_buffer.seek(0)
+    timestamp = recording['started_at'].replace(':', '-').replace('.', '-')
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"recording_{recording_id}_{timestamp}.zip"
+    )
+
+
+@app.route("/api/esp32cam/recordings/download/all", methods=["GET"])
+@login_required
+def esp32cam_recordings_download_all():
+    """Télécharger toutes les vidéos dans un fichier ZIP"""
+    recordings = get_db().execute(
+        "SELECT id, started_at, frame_count FROM camera_recordings WHERE status = 'completed' ORDER BY id DESC"
+    ).fetchall()
+    
+    if not recordings:
+        return jsonify({"success": False, "message": "Aucun enregistrement disponible"}), 404
+    
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for recording in recordings:
+            # Créer un sous-dossier pour chaque enregistrement
+            folder_name = f"recording_{recording['id']}_{recording['started_at'].replace(':', '-').replace('.', '-')}"
+            
+            # Récupérer les frames de cet enregistrement
+            frames = get_db().execute(
+                "SELECT frame_index, frame_data FROM camera_frames WHERE recording_id = ? ORDER BY frame_index ASC",
+                (recording['id'],),
+            ).fetchall()
+            
+            for frame in frames:
+                filename = f"{folder_name}/frame_{frame['frame_index']:06d}.jpg"
+                zip_file.writestr(filename, frame["frame_data"])
+            
+            # Ajouter un fichier info
+            info = f"Recording ID: {recording['id']}\nStarted: {recording['started_at']}\nTotal frames: {recording['frame_count']}\n"
+            zip_file.writestr(f"{folder_name}/info.txt", info)
+    
+    zip_buffer.seek(0)
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"all_recordings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    )
 
 @app.route("/api/esp32cam/recordings/<int:recording_id>/stream", methods=["GET"])
 @login_required

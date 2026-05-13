@@ -408,6 +408,12 @@
                             <button id="record-stop" class="btn-danger"><i class="fa-solid fa-stop"></i> Arrêter enregistrement</button>
                             <button id="cleanup-records" class="btn-dark"><i class="fa-solid fa-broom"></i> Nettoyer anciens enregistrements</button>
                         </div>
+
+                        <div class="action-row" style="margin-top: 10px;">
+                            <button id="download-all-snapshots" class="btn-primary"><i class="fa-solid fa-download"></i> Télécharger toutes les photos</button>
+                            <button id="download-all-recordings" class="btn-primary"><i class="fa-solid fa-download"></i> Télécharger toutes les vidéos</button>
+                        </div>
+
                         <div id="cam-msg" class="msg"></div>
                     </div>
 
@@ -681,18 +687,22 @@
                     const statusClass = r.status === "recording" ? "recording" : (r.status === "error" ? "error" : "completed");
                     const badge = `<span class="badge ${statusClass}">${r.status}</span>`;
                     const preview = `<a class="btn btn-dark" style="display:inline-block;margin-top:7px;padding:5px 8px;font-size:0.76rem;text-decoration:none" target="_blank" href="/api/esp32cam/recordings/${r.id}/stream">Voir</a>`;
+                    const download = `<button onclick="downloadRecording(${r.id})" class="btn-success" style="display:inline-block;margin-top:7px;margin-left:6px;padding:5px 8px;font-size:0.76rem;">
+                                        <i class="fa-solid fa-download"></i> Télécharger
+                                    </button>`;
                     const error = r.error_message ? `<div style="color:#ff96ac;margin-top:3px;">${r.error_message}</div>` : "";
                     box.append(`
                         <div class="list-item">
                             #${r.id} ${badge}<br>
                             Frames: ${r.frame_count} | Début: ${r.started_at}<br>
-                            ${preview}
+                            ${preview} ${download}
                             ${error}
                         </div>
                     `);
                 });
             });
         }
+
 
         function loadSnapshots() {
             $.getJSON("/api/esp32cam/snapshots", (res) => {
@@ -707,6 +717,9 @@
                         <div class="list-item">
                             #${s.id} - ${s.captured_at}<br>
                             <a class="btn btn-dark" style="display:inline-block;margin-top:6px;padding:5px 8px;font-size:0.76rem;text-decoration:none" target="_blank" href="/api/esp32cam/snapshots/${s.id}">Ouvrir</a>
+                            <button onclick="downloadSnapshot(${s.id})" class="btn-success" style="display:inline-block;margin-top:6px;margin-left:6px;padding:5px 8px;font-size:0.76rem;">
+                                <i class="fa-solid fa-download"></i> Télécharger
+                            </button>
                         </div>
                     `);
                 });
@@ -726,18 +739,109 @@
             });
         }
 
+        // Télécharger une seule photo
+        function downloadSnapshot(snapshotId) {
+            window.location.href = `/api/esp32cam/snapshots/${snapshotId}/download`;
+        }
+
+        // Télécharger une vidéo spécifique
+        function downloadRecording(recordingId) {
+            window.location.href = `/api/esp32cam/recordings/${recordingId}/download`;
+        }
+
+        // Télécharger toutes les photos (fichier ZIP)
+        function downloadAllSnapshots() {
+            setCamMessage("Préparation du téléchargement des photos...", "success");
+            
+            $.ajax({
+                url: "/api/esp32cam/snapshots/download/all",
+                method: "GET",
+                xhrFields: {
+                    responseType: 'blob'
+                },
+                success: (data, status, xhr) => {
+                    const disposition = xhr.getResponseHeader('Content-Disposition');
+                    const filename = disposition ? disposition.split('filename=')[1].replace(/["']/g, '') : 'snapshots.zip';
+                    
+                    const url = window.URL.createObjectURL(data);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    setCamMessage("Téléchargement des photos terminé !", "success");
+                },
+                error: (xhr) => {
+                    const msg = xhr.responseJSON?.message || "Erreur lors du téléchargement";
+                    setCamMessage(msg, "error");
+                }
+            });
+        }
+
+        // Télécharger toutes les vidéos (fichier ZIP)
+        function downloadAllRecordings() {
+            setCamMessage("Préparation du téléchargement des vidéos...", "success");
+            
+            $.ajax({
+                url: "/api/esp32cam/recordings/download/all",
+                method: "GET",
+                xhrFields: {
+                    responseType: 'blob'
+                },
+                success: (data, status, xhr) => {
+                    const disposition = xhr.getResponseHeader('Content-Disposition');
+                    const filename = disposition ? disposition.split('filename=')[1].replace(/["']/g, '') : 'recordings.zip';
+                    
+                    const url = window.URL.createObjectURL(data);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    setCamMessage("Téléchargement des vidéos terminé !", "success");
+                },
+                error: (xhr) => {
+                    const msg = xhr.responseJSON?.message || "Erreur lors du téléchargement";
+                    setCamMessage(msg, "error");
+                }
+            });
+        }
+
         function cleanupOldRecordings() {
-            const confirmed = window.confirm("Supprimer les anciens enregistrements et garder seulement les 3 plus récents ?");
+            const confirmed = window.confirm("Supprimer les anciens enregistrements et captures (garder les 3 plus récents) ?");
             if (!confirmed) return;
 
+            // Nettoyer les vidéos
             $.ajax({
                 url: "/api/esp32cam/recordings/cleanup",
                 method: "POST",
                 contentType: "application/json",
                 data: JSON.stringify({ keep_last: 3 }),
                 success: (res) => {
-                    setCamMessage(res.message || "Nettoyage terminé.", "success");
+                    setCamMessage(res.message || "Nettoyage des vidéos terminé.", "success");
                     loadRecordings();
+                    
+                    // Nettoyer les snapshots
+                    $.ajax({
+                        url: "/api/esp32cam/snapshots/cleanup",
+                        method: "POST",
+                        contentType: "application/json",
+                        data: JSON.stringify({ keep_last: 3 }),
+                        success: (res2) => {
+                            setCamMessage(`Vidéos et captures nettoyées. ${res2.message}`, "success");
+                            loadSnapshots();
+                        },
+                        error: (xhr2) => {
+                            const msg = xhr2.responseJSON?.message || "Erreur nettoyage captures";
+                            setCamMessage(msg, "error");
+                        }
+                    });
                 },
                 error: (xhr) => {
                     const msg = xhr.responseJSON?.message || "Erreur pendant le nettoyage";
@@ -750,7 +854,8 @@
             initTheme();
             generateLamps();
             $("#status").text("Connexion active");
-
+            $("#download-all-snapshots").on("click", downloadAllSnapshots);
+            $("#download-all-recordings").on("click", downloadAllRecordings);
             $("#theme-toggle").on("click", toggleTheme);
             $("#password-btn").on("click", openPasswordModal);
             $("#password-close").on("click", closePasswordModal);
