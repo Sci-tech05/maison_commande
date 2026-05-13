@@ -107,60 +107,6 @@ def ensure_column(conn, table_name, column_sql):
     if not table_has_column(conn, table_name, column_name):
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
 
-# ====================== NOUVELLE ROUTE HTTP POUR ESP32-CAM ======================
-@app.route("/upload_frame", methods=["POST"])
-def upload_frame():
-    device_id = request.headers.get("X-Device-ID", "esp32cam-1")
-    
-    if not request.data or len(request.data) < 100:
-        return jsonify({"success": False, "message": "Frame vide"}), 400
-
-    try:
-        cam_stream_state.push_frame(request.data, device_id, int(time.time()))
-        cam_recorder.record_frame(request.data)
-
-        socketio.emit("cam_status", {
-            "device_id": device_id,
-            "last_frame_size": len(request.data),
-            "received_at": utc_now_iso(),
-        })
-
-        return jsonify({"success": True, "size": len(request.data)}), 200
-
-    except Exception as e:
-        print(f"Erreur upload_frame: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
-
-# ====================== PROXY MJPEG ESP32-CAM (Stream fluide) ======================
-@app.route("/esp32cam/stream")
-@login_required
-def esp32cam_mjpeg_proxy():
-    # ←←← CHANGE CETTE IP avec celle affichée par ton ESP32 ←←←
-    esp32_ip = "192.168.137.58"  
-    
-    try:
-        import requests
-
-        def generate():
-            url = f"http://{esp32_ip}/stream"
-            with requests.get(url, stream=True, timeout=25) as r:
-                r.raise_for_status()
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        yield chunk
-
-        return Response(
-            generate(),
-            mimetype="multipart/x-mixed-replace; boundary=frame",
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-    except Exception as e:
-        print(f"Erreur proxy stream ESP32: {e}")
-        return "Impossible de se connecter à la caméra ESP32", 503
 
 def init_db():
     conn = get_db_connection()
@@ -289,6 +235,35 @@ def api_login_required(view_func):
         return view_func(*args, **kwargs)
 
     return wrapped
+
+
+@app.route("/esp32cam/stream")
+@login_required
+def esp32cam_mjpeg_proxy():
+    esp32_ip = "192.168.137.58"  
+    
+    try:
+        import requests
+        
+        def generate():
+            url = f"http://{esp32_ip}/stream"
+            with requests.get(url, stream=True, timeout=30) as r:
+                r.raise_for_status()
+                for chunk in r.iter_content(chunk_size=16384):
+                    if chunk:
+                        yield chunk
+
+        return Response(
+            generate(),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache"
+            }
+        )
+    except Exception as e:
+        print(f"Erreur connexion ESP32 stream: {e}")
+        return "Caméra non accessible", 503
 
 
 class ESP32CamRecorder:
