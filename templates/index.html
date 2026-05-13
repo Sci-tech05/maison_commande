@@ -397,24 +397,7 @@
 
                 <div class="camera-grid">
                     <div>
-                        <div class="stream-box" id="stream-box">
-                            <img id="live-stream" src="/esp32cam/live?ts={{ range(1000000,9999999) | random }}" alt="Flux ESP32-CAM">
-                            <div class="stream-placeholder" id="stream-placeholder" style="display:none;">En attente des frames MQTT...</div>
-                        </div>
-
-                        <div class="meta-grid">
-                            <div class="meta-card">Dernière frame: <strong id="last-frame">-</strong></div>
-                            <div class="meta-card">Taille frame: <strong id="frame-size">-</strong></div>
-                        </div>
-
-                        <div class="field">
-                            <label for="device-id">Device ID ESP32-CAM</label>
-                            <input id="device-id" type="text" placeholder="esp32cam-1">
-                        </div>
-
                         <div class="action-row">
-                            <button id="save-device" class="btn-primary"><i class="fa-solid fa-id-card"></i> Enregistrer device</button>
-                            <button id="refresh-stream" class="btn-dark"><i class="fa-solid fa-rotate"></i> Relancer flux</button>
                             <button id="snapshot-btn" class="btn-success"><i class="fa-solid fa-camera"></i> Capturer image</button>
                             <button id="record-start" class="btn-primary"><i class="fa-solid fa-circle"></i> Démarrer rec</button>
                             <button id="record-stop" class="btn-danger"><i class="fa-solid fa-stop"></i> Arrêter rec</button>
@@ -651,27 +634,6 @@
             });
         }
 
-        function saveCameraConfig() {
-            const deviceId = $("#device-id").val().trim();
-            if (!deviceId) {
-                setCamMessage("Veuillez saisir un device ID.", "error");
-                return;
-            }
-            $.ajax({
-                url: "/api/esp32cam/config",
-                method: "POST",
-                contentType: "application/json",
-                data: JSON.stringify({ device_id: deviceId }),
-                success: (res) => {
-                    setCamMessage(res.message || "Device ID mis à jour.", "success");
-                },
-                error: (xhr) => {
-                    const msg = xhr.responseJSON?.message || "Erreur sauvegarde device";
-                    setCamMessage(msg, "error");
-                }
-            });
-        }
-
         function startRecording() {
             $.post("/api/esp32cam/record/start", (res) => {
                 setCamMessage(res.message || "Enregistrement démarré.", "success");
@@ -760,14 +722,14 @@
         }
 
         function cleanupOldRecordings() {
-            const confirmed = window.confirm("Supprimer les anciens enregistrements et garder seulement les 10 plus récents ?");
+            const confirmed = window.confirm("Supprimer les anciens enregistrements et garder seulement les 3 plus récents ?");
             if (!confirmed) return;
 
             $.ajax({
                 url: "/api/esp32cam/recordings/cleanup",
                 method: "POST",
                 contentType: "application/json",
-                data: JSON.stringify({ keep_last: 10 }),
+                data: JSON.stringify({ keep_last: 3 }),
                 success: (res) => {
                     setCamMessage(res.message || "Nettoyage terminé.", "success");
                     loadRecordings();
