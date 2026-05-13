@@ -404,19 +404,18 @@
 
                         <div class="action-row">
                             <button id="snapshot-btn" class="btn-success"><i class="fa-solid fa-camera"></i> Capturer image</button>
-                            <button id="record-start" class="btn-primary"><i class="fa-solid fa-circle"></i> Démarrer rec</button>
-                            <button id="record-stop" class="btn-danger"><i class="fa-solid fa-stop"></i> Arrêter rec</button>
+                            <button id="record-start" class="btn-primary"><i class="fa-solid fa-circle"></i> Démarrer enregistrement</button>
+                            <button id="record-stop" class="btn-danger"><i class="fa-solid fa-stop"></i> Arrêter enregistrement</button>
                             <button id="cleanup-records" class="btn-dark"><i class="fa-solid fa-broom"></i> Nettoyer anciens enregistrements</button>
                         </div>
                         <div id="cam-msg" class="msg"></div>
                     </div>
 
                     <div>
-                        <h3 style="margin:0 0 8px; font-family:'Outfit',sans-serif;">Historique</h3>
-                        <small>Derniers enregistrements et captures</small>
+                        <h3 style="margin:0 0 8px; font-family:'Outfit',sans-serif;">HISTORIQUES</h3>
 
                         <div style="margin-top:10px;">
-                            <strong style="font-size:0.95rem;">Enregistrements</strong>
+                            <strong style="font-size:0.95rem;">Vidéos</strong>
                             <div id="recordings-list" class="list"></div>
                         </div>
 
@@ -728,14 +727,14 @@
         }
 
         function cleanupOldRecordings() {
-            const confirmed = window.confirm("Supprimer les anciens enregistrements et garder seulement les 10 plus récents ?");
+            const confirmed = window.confirm("Supprimer les anciens enregistrements et garder seulement les 3 plus récents ?");
             if (!confirmed) return;
 
             $.ajax({
                 url: "/api/esp32cam/recordings/cleanup",
                 method: "POST",
                 contentType: "application/json",
-                data: JSON.stringify({ keep_last: 10 }),
+                data: JSON.stringify({ keep_last: 3 }),
                 success: (res) => {
                     setCamMessage(res.message || "Nettoyage terminé.", "success");
                     loadRecordings();

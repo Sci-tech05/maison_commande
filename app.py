@@ -692,11 +692,11 @@ def esp32cam_recordings():
 @api_login_required
 def esp32cam_recordings_cleanup():
     payload = request.get_json(silent=True) or {}
-    keep_last = payload.get("keep_last", 10)
+    keep_last = payload.get("keep_last", 3)
     try:
         keep_last = max(0, int(keep_last))
     except (TypeError, ValueError):
-        keep_last = 10
+        keep_last = 3
 
     db = get_db()
     rows = db.execute(
