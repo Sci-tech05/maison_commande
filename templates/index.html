@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Maison</title>
+    <title>Dashboard Maison - Live Camera</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/js/all.min.js"></script>
     <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
@@ -303,196 +303,182 @@
             display: none;
             align-items: center;
             justify-content: center;
-            z-index: 120;
-            padding: 16px;
+            z-index: 1000;
         }
 
-        .modal-card {
-            width: min(480px, 100%);
-            border: 1px solid var(--line);
-            border-radius: 16px;
-            background: var(--surface);
+        .modal-content {
+            background: var(--bg-main);
+            border-radius: 20px;
+            padding: 30px;
+            width: 90%;
+            max-width: 500px;
             box-shadow: var(--shadow);
-            padding: 16px;
+            border: 1px solid var(--line);
+            position: relative;
         }
 
-        .modal-head {
+        .modal-content h2 { margin-top: 0; }
+
+        .modal-close-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-soft);
+            cursor: pointer;
+        }
+
+        .modal-actions {
+            margin-top: 20px;
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
+            justify-content: flex-end;
+            gap: 10px;
         }
 
-        .modal-head h3 {
-            margin: 0;
-            font-family: "Outfit", sans-serif;
-            font-size: 1.2rem;
+        @media (min-width: 768px) {
+            .grid { grid-template-columns: 1fr 1fr; }
+            .camera-grid { grid-template-columns: 2fr 1fr; }
         }
 
-        .close-modal-btn {
-            width: 34px;
-            height: 34px;
-            border-radius: 10px;
-            padding: 0;
-            background: var(--btn-dark-bg);
-            border: 1px solid var(--btn-dark-border);
-            color: var(--text-main);
-        }
-
-        @media (max-width: 980px) {
-            .camera-grid { grid-template-columns: 1fr; }
-        }
-
-        @media (max-width: 620px) {
-            body { padding: 14px; }
-            .panel { padding: 16px; }
-            .topbar { align-items: flex-start; flex-direction: column; }
-            .lamp-icon-wrap {
-                min-height: 68px;
-            }
-            .lamp-icon-wrap i,
-            .lamp-icon-wrap svg {
-                width: 56px !important;
-                height: 56px !important;
-                font-size: 56px !important;
-            }
+        @media (min-width: 1024px) {
+            .grid { grid-template-columns: 1.5fr 1fr; }
         }
     </style>
 </head>
 <body>
     <div class="shell">
-        <header class="topbar">
+        <div class="topbar">
             <div class="title-box">
-                <h1>Pilotage intelligent de la maison</h1>
-                <div class="subtitle">Connecté en tant que <strong>{{ username }}</strong></div>
+                <h1>Dashboard Maison</h1>
+                <p class="subtitle">Bienvenue, <span id="username-display"></span></p>
             </div>
             <div class="top-actions">
-                <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Activer le mode clair">
-                    <i id="theme-icon" class="fa-solid fa-moon"></i>
+                <button id="theme-toggle" class="theme-toggle">
+                    <i class="fa-solid fa-moon"></i>
                 </button>
-                <button id="password-btn" class="btn-dark" type="button">
-                    <i class="fa-solid fa-key"></i> Mot de passe
-                </button>
-                <form class="logout-form" method="POST" action="{{ url_for('logout') }}">
-                    <button type="submit"><i class="fa-solid fa-right-from-bracket"></i> Déconnexion</button>
+                <form action="/logout" method="post" class="logout-form">
+                    <button type="submit">Déconnexion</button>
                 </form>
             </div>
-        </header>
-
-        <main class="grid">
-            <section class="panel">
-                <h2>Éclairage & Prises</h2>
-
-                <div class="status" id="status">Connexion au serveur...</div>
-
-                <div class="action-row">
-                    <button id="btn-all" class="btn-primary"><i class="fa-solid fa-bolt"></i> Allumer tout</button>
-                </div>
-
-                <div id="lamps-grid" class="lamp-grid"></div>
-            </section>
-
-            <section class="panel">
-                <h2>CAMERA MAISON</h2>
-
-                <div class="camera-grid">
-                    <div>
-                        <div class="stream-box" id="stream-box">
-                            <img id="live-stream" 
-                                 src="/esp32cam/stream" 
-                                 alt="Flux ESP32-CAM en direct">
-                            <div class="stream-placeholder" id="stream-placeholder" style="display:none;">
-                                En attente du flux caméra...
-                            </div>
-                        </div>
-                        <div class="action-row" style="margin-top: 15px;">
-                            <button id="refresh-stream" class="btn-dark">
-                                <i class="fa-solid fa-rotate"></i> Rafraîchir flux
-                            </button>
-                            <button id="snapshot-btn" class="btn-success">
-                                <i class="fa-solid fa-camera"></i> Capturer image
-                            </button>
-                            <button id="record-start" class="btn-primary">
-                                <i class="fa-solid fa-circle"></i> Démarrer rec
-                            </button>
-                            <button id="record-stop" class="btn-danger">
-                                <i class="fa-solid fa-stop"></i> Arrêter rec
-                            </button>
-                            <button id="cleanup-records" class="btn-dark">
-                                <i class="fa-solid fa-broom"></i> Nettoyer
-                            </button>
-                        </div>
-
-                        <div id="cam-msg" class="msg"></div>
-                    </div>
-
-                    <div>
-                        <h3 style="margin:0 0 8px; font-family:'Outfit',sans-serif;">Historique</h3>
-                        <small>Derniers enregistrements et captures</small>
-
-                        <div style="margin-top:10px;">
-                            <strong style="font-size:0.95rem;">Enregistrements</strong>
-                            <div id="recordings-list" class="list"></div>
-                        </div>
-
-                        <div style="margin-top:12px;">
-                            <strong style="font-size:0.95rem;">Captures</strong>
-                            <div id="snapshots-list" class="list"></div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </main>
-    </div>
-
-    <div id="password-modal" class="modal-backdrop" aria-hidden="true">
-        <div class="modal-card">
-            <div class="modal-head">
-                <h3>Changer mot de passe</h3>
-                <button id="password-close" class="close-modal-btn" type="button" aria-label="Fermer">×</button>
-            </div>
-            <div class="field">
-                <label for="current-password">Mot de passe actuel</label>
-                <input id="current-password" type="password" autocomplete="current-password">
-            </div>
-            <div class="field">
-                <label for="new-password">Nouveau mot de passe</label>
-                <input id="new-password" type="password" autocomplete="new-password">
-            </div>
-            <div class="field">
-                <label for="confirm-password">Confirmer le nouveau mot de passe</label>
-                <input id="confirm-password" type="password" autocomplete="new-password">
-            </div>
-            <div class="action-row" style="margin-top:12px;">
-                <button id="password-save" class="btn-primary" type="button">
-                    <i class="fa-solid fa-floppy-disk"></i> Enregistrer
-                </button>
-            </div>
-            <div id="password-msg" class="msg"></div>
         </div>
+
+        <div class="grid">
+            <div class="panel">
+                <h2>Caméra ESP32-CAM</h2>
+                <small>Flux vidéo en temps réel</small>
+                <div class="camera-grid">
+                    <div class="stream-box">
+                        <img id="live-stream" src="" alt="Flux vidéo" style="display: none;">
+                        <div id="stream-placeholder" class="stream-placeholder">
+                            <i class="fa-solid fa-video-slash fa-3x" style="color: #86a8c0;"></i>
+                            <p>En attente du flux vidéo...</p>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="action-row">
+                            <button id="record-start" class="btn-primary">Démarrer Enregistrement</button>
+                            <button id="record-stop" class="btn-danger">Arrêter Enregistrement</button>
+                            <button id="snapshot-btn" class="btn-dark">Prendre une photo</button>
+                        </div>
+                        <div class="msg" id="cam-msg"></div>
+                        <div class="meta-grid">
+                            <div class="meta-card">Dernière frame: <span id="last-frame">N/A</span></div>
+                            <div class="meta-card">Taille: <span id="frame-size">N/A</span></div>
+                            <div class="meta-card">Device ID: <span id="device-id-display">N/A</span></div>
+                        </div>
+
+                        <div class="field">
+                            <label for="device-id">Changer Device ID:</label>
+                            <input type="text" id="device-id" value="esp32cam-1">
+                            <button class="btn-dark" style="margin-top: 10px;" onclick="updateDeviceId()">Mettre à jour</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>Enregistrements & Captures</h2>
+                <small>Gérer les médias de la caméra</small>
+                <div class="action-row">
+                    <button id="cleanup-records" class="btn-dark">Nettoyer Anciens</button>
+                </div>
+                <h3>Enregistrements</h3>
+                <div class="list" id="recordings-list">
+                    <div class="list-item">Chargement...</div>
+                </div>
+                <h3>Captures</h3>
+                <div class="list" id="snapshots-list">
+                    <div class="list-item">Chargement...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" style="margin-top: 20px;">
+            <h2>Contrôle des Lampes</h2>
+            <small>Gérer l'éclairage et les prises</small>
+            <div class="action-row">
+                <button id="btn-all" class="btn-primary">Allumer tout</button>
+            </div>
+            <div class="lamp-grid" id="lamps-grid">
+                <!-- Lampes générées ici -->
+            </div>
+        </div>
+
+        <div class="modal-backdrop" id="password-modal">
+            <div class="modal-content">
+                <button class="modal-close-btn" id="password-close">&times;</button>
+                <h2>Changer le mot de passe</h2>
+                <div class="field">
+                    <label for="current-password">Mot de passe actuel</label>
+                    <input type="password" id="current-password">
+                </div>
+                <div class="field">
+                    <label for="new-password">Nouveau mot de passe</label>
+                    <input type="password" id="new-password">
+                </div>
+                <div class="field">
+                    <label for="confirm-password">Confirmer nouveau mot de passe</label>
+                    <input type="password" id="confirm-password">
+                </div>
+                <div class="msg" id="password-msg"></div>
+                <div class="modal-actions">
+                    <button class="btn-dark" id="password-save">Enregistrer</button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
-        const lampNames = ["Devanture", "Salon", "Chambre", "Prise Salon", "Prise Chambre"];
+        const THEME_KEY = "maison-commande-theme";
+        const socket = io(); // Connecte au serveur Socket.IO
+
         const lampMapping = ["devanture", "salon", "chambre", "prise_salon", "prise_chambre"];
+        const lampNames = ["Lampe Devanture", "Lampe Salon", "Lampe Chambre", "Prise Salon", "Prise Chambre"];
         const isPrise = [false, false, false, true, true];
         let lampStates = [false, false, false, false, false];
 
-        const socket = io();
-        const THEME_KEY = "site-theme";
-
         function applyTheme(theme) {
             document.documentElement.setAttribute("data-theme", theme);
-            const isLight = theme === "light";
-            $("#theme-icon")
-                .removeClass("fa-moon fa-sun")
-                .addClass(isLight ? "fa-sun" : "fa-moon");
-            $("#theme-toggle").attr("aria-label", isLight ? "Activer le mode sombre" : "Activer le mode clair");
+            const icon = $("#theme-toggle i");
+            if (theme === "dark") {
+                icon.removeClass("fa-sun").addClass("fa-moon");
+            } else {
+                icon.removeClass("fa-moon").addClass("fa-sun");
+            }
         }
 
         function initTheme() {
-            const saved = localStorage.getItem(THEME_KEY);
-            applyTheme(saved === "light" ? "light" : "dark");
+            const savedTheme = localStorage.getItem(THEME_KEY);
+            if (savedTheme) {
+                applyTheme(savedTheme);
+            } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                applyTheme('light');
+            } else {
+                applyTheme('dark');
+            }
         }
 
         function toggleTheme() {
@@ -629,26 +615,58 @@
             if (idx >= 0) updateLampButton(idx, data.action === "ON");
         });
 
+        // --- Gestion du flux vidéo WebSocket --- 
+        socket.on("live_stream_frame", (imageData) => {
+            const img = $("#live-stream");
+            const placeholder = $("#stream-placeholder");
+            
+            // Convertir les données binaires en URL d'objet Blob
+            const blob = new Blob([imageData], { type: 'image/jpeg' });
+            const imageUrl = URL.createObjectURL(blob);
+
+            img.attr("src", imageUrl);
+            img.show();
+            placeholder.hide();
+
+            // Libérer l'URL de l'objet Blob précédent pour éviter les fuites de mémoire
+            if (img.data('oldImageUrl')) {
+                URL.revokeObjectURL(img.data('oldImageUrl'));
+            }
+            img.data('oldImageUrl', imageUrl);
+        });
+
         socket.on("cam_status", (data) => {
             if (data?.received_at) {
-                $("#last-frame").text(data.received_at);
+                $("#last-frame").text(new Date(data.received_at).toLocaleTimeString());
             }
             if (data?.last_frame_size) {
-                $("#frame-size").text(`${data.last_frame_size} bytes`);
+                $("#frame-size").text(`${(data.last_frame_size / 1024).toFixed(2)} KB`);
+            }
+            if (data?.device_id) {
+                $("#device-id-display").text(data.device_id);
             }
         });
 
-        function restartLiveStream() {
-            const img = $("#live-stream");
-            img.attr("src", "/esp32cam/stream?ts=" + Date.now());
-        }
+        socket.on("cam_device_status", (data) => {
+            // Gérer les statuts de l'ESP32-CAM envoyés via MQTT (si toujours utilisés)
+            console.log("Statut appareil caméra via MQTT:", data);
+        });
 
-        function loadCameraConfig() {
-            $.getJSON("/api/esp32cam/config", (res) => {
-                if (!res.success) return;
-                $("#device-id").val(res.device_id || "esp32cam-1");
-                $("#frame-topic").text(res.frame_topic || "-");
-                $("#status-topic").text(res.status_topic || "-");
+        function updateDeviceId() {
+            const newDeviceId = $("#device-id").val();
+            $.ajax({
+                url: "/api/esp32cam/config",
+                method: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ device_id: newDeviceId }),
+                success: (res) => {
+                    setCamMessage(res.message, "success");
+                    $("#device-id-display").text(newDeviceId);
+                },
+                error: (xhr) => {
+                    const msg = xhr.responseJSON?.message || "Erreur lors de la mise à jour du Device ID";
+                    setCamMessage(msg, "error");
+                }
             });
         }
 
@@ -698,7 +716,7 @@
                     box.append(`
                         <div class="list-item">
                             #${r.id} ${badge}<br>
-                            Frames: ${r.frame_count} | Début: ${r.started_at}<br>
+                            Frames: ${r.frame_count} | Début: ${new Date(r.started_at).toLocaleString()}<br>
                             ${preview}
                             ${error}
                         </div>
@@ -718,7 +736,7 @@
                 res.snapshots.forEach((s) => {
                     box.append(`
                         <div class="list-item">
-                            #${s.id} - ${s.captured_at}<br>
+                            #${s.id} - ${new Date(s.captured_at).toLocaleString()}<br>
                             <a class="btn btn-dark" style="display:inline-block;margin-top:6px;padding:5px 8px;font-size:0.76rem;text-decoration:none" target="_blank" href="/api/esp32cam/snapshots/${s.id}">Ouvrir</a>
                         </div>
                     `);
@@ -731,10 +749,14 @@
                 if (!res.success) return;
                 const stream = res.stream || {};
                 if (stream.last_received_at) {
-                    $("#last-frame").text(stream.last_received_at);
+                    $("#last-frame").text(new Date(stream.last_received_at).toLocaleTimeString());
                 }
                 if (stream.last_frame_size) {
-                    $("#frame-size").text(`${stream.last_frame_size} bytes`);
+                    $("#frame-size").text(`${(stream.last_frame_size / 1024).toFixed(2)} KB`);
+                }
+                if (stream.last_device_id) {
+                    $("#device-id-display").text(stream.last_device_id);
+                    $("#device-id").val(stream.last_device_id);
                 }
             });
         }
@@ -762,6 +784,7 @@
         $(document).ready(() => {
             initTheme();
             generateLamps();
+            $("#username-display").text("{{ username }}"); // Assurez-vous que Flask passe le nom d'utilisateur
             $("#status").text("Connexion active");
 
             $("#theme-toggle").on("click", toggleTheme);
@@ -769,17 +792,17 @@
             $("#password-close").on("click", closePasswordModal);
             $("#password-save").on("click", changePassword);
             $("#btn-all").on("click", toggleAllLamps);
-            $("#save-device").on("click", saveCameraConfig);
-            $("#refresh-stream").on("click", function() {
-                const img = $("#live-stream");
-                img.attr("src", "/esp32cam/stream?ts=" + Date.now());
-            });
+            // Le bouton refresh-stream n'est plus nécessaire pour le flux WebSocket direct
+            // $("#refresh-stream").on("click", function() {
+            //     const img = $("#live-stream");
+            //     img.attr("src", "/esp32cam/stream?ts=" + Date.now());
+            // });
             $("#record-start").on("click", startRecording);
             $("#record-stop").on("click", stopRecording);
             $("#snapshot-btn").on("click", captureSnapshot);
             $("#cleanup-records").on("click", cleanupOldRecordings);
 
-            loadCameraConfig();
+            loadCameraConfig(); // Pour charger le device ID initial
             loadRecordings();
             loadSnapshots();
             loadCamRuntimeStatus();
