@@ -397,10 +397,15 @@
 
                 <div class="camera-grid">
                     <div>
+                        <div class="stream-box" id="stream-box">
+                            <img id="live-stream" src="/esp32cam/live?ts={{ range(1000000,9999999) | random }}" alt="Flux ESP32-CAM">
+                            <div class="stream-placeholder" id="stream-placeholder" style="display:none;">En attente des frames MQTT...</div>
+                        </div>
+
                         <div class="action-row">
                             <button id="snapshot-btn" class="btn-success"><i class="fa-solid fa-camera"></i> Capturer image</button>
-                            <button id="record-start" class="btn-primary"><i class="fa-solid fa-circle"></i> Démarrer Enregistrement</button>
-                            <button id="record-stop" class="btn-danger"><i class="fa-solid fa-stop"></i> Arrêter Enregistrement</button>
+                            <button id="record-start" class="btn-primary"><i class="fa-solid fa-circle"></i> Démarrer rec</button>
+                            <button id="record-stop" class="btn-danger"><i class="fa-solid fa-stop"></i> Arrêter rec</button>
                             <button id="cleanup-records" class="btn-dark"><i class="fa-solid fa-broom"></i> Nettoyer anciens enregistrements</button>
                         </div>
                         <div id="cam-msg" class="msg"></div>
@@ -634,7 +639,7 @@
             });
         }
 
-
+        
         function startRecording() {
             $.post("/api/esp32cam/record/start", (res) => {
                 setCamMessage(res.message || "Enregistrement démarré.", "success");
