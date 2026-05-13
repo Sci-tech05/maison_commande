@@ -1,4 +1,5 @@
-﻿import base64
+﻿# -*- coding: utf-8 -*-
+import base64
 import io
 import json
 import os
@@ -22,7 +23,7 @@ from flask import (
     session,
     url_for,
 )
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # Force UTF-8 sur stdout/stderr sous Windows
@@ -59,9 +60,10 @@ MQTT_TOPIC_CHAMBRE = "maison/chambre/control"
 MQTT_TOPIC_PRISE_SALON = "maison/salon/prise/control"
 MQTT_TOPIC_PRISE_CHAMBRE = "maison/chambre/prise/control"
 
-# Topics MQTT - ESP32-CAM (pour les status, les frames passeront par WebSocket direct)
+# Topics MQTT - ESP32-CAM
+MQTT_TOPIC_ESP32CAM_FRAME = "maison/esp32cam/frame"
 MQTT_TOPIC_ESP32CAM_STATUS = "maison/esp32cam/status"
-ESP32CAM_SOURCE_LABEL = f"websocket://esp32cam-direct"
+ESP32CAM_SOURCE_LABEL = f"mqtt://{MQTT_TOPIC_ESP32CAM_FRAME}"
 
 # Variables MQTT globales
 client = None
@@ -105,6 +107,29 @@ def ensure_column(conn, table_name, column_sql):
     if not table_has_column(conn, table_name, column_name):
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
 
+# ====================== NOUVELLE ROUTE HTTP POUR ESP32-CAM ======================
+@app.route("/upload_frame", methods=["POST"])
+def upload_frame():
+    device_id = request.headers.get("X-Device-ID", "esp32cam-1")
+    
+    if not request.data or len(request.data) < 100:
+        return jsonify({"success": False, "message": "Frame vide"}), 400
+
+    try:
+        cam_stream_state.push_frame(request.data, device_id, int(time.time()))
+        cam_recorder.record_frame(request.data)
+
+        socketio.emit("cam_status", {
+            "device_id": device_id,
+            "last_frame_size": len(request.data),
+            "received_at": utc_now_iso(),
+        })
+
+        return jsonify({"success": True, "size": len(request.data)}), 200
+
+    except Exception as e:
+        print(f"Erreur upload_frame: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 def init_db():
     conn = get_db_connection()
@@ -120,8 +145,8 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS esp32cam_config (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
-                stream_url TEXT NOT NULL DEFAULT \'\',
-                device_id TEXT NOT NULL DEFAULT \'esp32cam-1\',
+                stream_url TEXT NOT NULL DEFAULT '',
+                device_id TEXT NOT NULL DEFAULT 'esp32cam-1',
                 updated_at TEXT NOT NULL
             );
 
@@ -156,8 +181,8 @@ def init_db():
             """
         )
 
-        ensure_column(conn, "esp32cam_config", "device_id TEXT NOT NULL DEFAULT \'esp32cam-1\'")
-        ensure_column(conn, "esp32cam_config", "stream_url TEXT NOT NULL DEFAULT \'\'")
+        ensure_column(conn, "esp32cam_config", "device_id TEXT NOT NULL DEFAULT 'esp32cam-1'")
+        ensure_column(conn, "esp32cam_config", "stream_url TEXT NOT NULL DEFAULT ''")
 
         now = utc_now_iso()
 
@@ -184,7 +209,7 @@ def init_db():
             )
         else:
             conn.execute(
-                "UPDATE esp32cam_config SET device_id = COALESCE(NULLIF(device_id, \'\'), ?), updated_at = ? WHERE id = 1",
+                "UPDATE esp32cam_config SET device_id = COALESCE(NULLIF(device_id, ''), ?), updated_at = ? WHERE id = 1",
                 (default_device_id, now),
             )
 
@@ -235,13 +260,6 @@ def api_login_required(view_func):
     return wrapped
 
 
-# Suppression de la route esp32cam_mjpeg_proxy car le flux sera direct via WebSocket
-# @app.route("/esp32cam/stream")
-# @login_required
-# def esp32cam_mjpeg_proxy():
-#    ...
-
-
 class ESP32CamRecorder:
     def __init__(self):
         self.lock = threading.Lock()
@@ -260,7 +278,7 @@ class ESP32CamRecorder:
             cursor = conn.execute(
                 """
                 INSERT INTO camera_recordings (stream_url, status, started_at, frame_count)
-                VALUES (?, \'recording\', ?, 0)
+                VALUES (?, 'recording', ?, 0)
                 """,
                 (source_label, now),
             )
@@ -307,7 +325,7 @@ class ESP32CamRecorder:
             self.db_conn.execute(
                 """
                 UPDATE camera_recordings
-                SET status = \'completed\', ended_at = ?, frame_count = ?
+                SET status = 'completed', ended_at = ?, frame_count = ?
                 WHERE id = ?
                 """,
                 (utc_now_iso(), self.frame_count, current_id),
@@ -377,58 +395,63 @@ cam_recorder = ESP32CamRecorder()
 cam_stream_state = ESP32CamStreamState()
 
 
-# --- WebSocket direct pour ESP32-CAM ---
-@socketio.on('esp32_cam_stream')
-def handle_esp32_cam_stream(data):
-    # 'data' devrait être les octets binaires de l'image
-    if isinstance(data, bytes):
-        frame_bytes = data
-        device_id = "esp32cam-direct" # Ou extraire d'un en-tête si l'ESP32 envoie plus d'infos
-        sent_ts = utc_now_iso() # Le timestamp du serveur, ou celui envoyé par l'ESP32 si disponible
+def handle_esp32cam_frame_message(raw_payload):
+    try:
+        payload_text = raw_payload.decode("utf-8", errors="ignore").strip()
+        if not payload_text:
+            return
+
+        message = json.loads(payload_text)
+        if isinstance(message, dict):
+            frame_b64 = message.get("frame")
+            device_id = str(message.get("device_id") or message.get("device") or "esp32cam-1")
+            sent_ts = message.get("ts")
+        else:
+            frame_b64 = None
+            device_id = "esp32cam-1"
+            sent_ts = None
+
+        if not frame_b64:
+            return
+
+        frame_bytes = base64.b64decode(frame_b64, validate=True)
+        if len(frame_bytes) < 8:
+            return
 
         cam_stream_state.push_frame(frame_bytes, device_id, sent_ts)
         cam_recorder.record_frame(frame_bytes)
 
-        # Émettre la frame binaire directement aux clients web connectés
-        emit("live_stream_frame", frame_bytes, broadcast=True)
-        
-        # Mettre à jour le statut de la caméra pour le frontend
-        emit(
+        socketio.emit(
             "cam_status",
             {
                 "device_id": device_id,
                 "last_frame_size": len(frame_bytes),
                 "received_at": utc_now_iso(),
             },
-            broadcast=True
         )
-    else:
-        print(f"Données de stream ESP32-CAM inattendues: {type(data)}")
+    except Exception as exc:
+        print(f"Erreur decodage frame ESP32-CAM MQTT: {exc}")
 
 
-# Suppression de la fonction handle_esp32cam_frame_message car les frames arrivent directement via WebSocket
-# def handle_esp32cam_frame_message(raw_payload):
-#    ...
-
-# MQTT Callbacks (seul le topic de status est conservé pour MQTT)
+# MQTT Callbacks
 def on_connect(mqtt_client, _userdata, _flags, reason_code, _properties):
     rc_value = getattr(reason_code, "value", reason_code)
     is_success = (rc_value == 0) or (str(reason_code).strip().lower() == "success")
     if is_success:
         print("MQTT - Connexion reussie (CONNACK recu)")
         connected_event.set()
-        # mqtt_client.subscribe(MQTT_TOPIC_ESP32CAM_FRAME, qos=0) # Supprimé
+        mqtt_client.subscribe(MQTT_TOPIC_ESP32CAM_FRAME, qos=0)
         mqtt_client.subscribe(MQTT_TOPIC_ESP32CAM_STATUS, qos=0)
-        print(f"MQTT - Subscribe camera status: {MQTT_TOPIC_ESP32CAM_STATUS}")
+        print(f"MQTT - Subscribe camera: {MQTT_TOPIC_ESP32CAM_FRAME}")
     else:
         print(f"Echec connexion MQTT - code rc={reason_code}")
         connected_event.clear()
 
 
 def on_message(_mqtt_client, _userdata, msg):
-    # if msg.topic == MQTT_TOPIC_ESP32CAM_FRAME: # Supprimé
-    #    handle_esp32cam_frame_message(msg.payload)
-    #    return
+    if msg.topic == MQTT_TOPIC_ESP32CAM_FRAME:
+        handle_esp32cam_frame_message(msg.payload)
+        return
 
     if msg.topic == MQTT_TOPIC_ESP32CAM_STATUS:
         try:
@@ -465,7 +488,7 @@ def init_mqtt_client():
                 return
             print("Client MQTT initialise avec succes")
         except Exception as exc:
-            print(f"Erreur lors de l\'initialisation MQTT : {exc}")
+            print(f"Erreur lors de l'initialisation MQTT : {exc}")
             client = None
 
 
@@ -511,6 +534,7 @@ def login():
             flash("Identifiants invalides.", "error")
             return render_template("login.html")
 
+        session.clear()
         session["user_id"] = user["id"]
         session["username"] = user["username"]
         return redirect(url_for("index"))
@@ -543,7 +567,7 @@ def change_password():
         return jsonify({"success": False, "message": "Le nouveau mot de passe doit contenir au moins 8 caracteres."}), 400
 
     if new_password == current_password:
-        return jsonify({"success": False, "message": "Le nouveau mot de passe doit etre different de l\'ancien."}), 400
+        return jsonify({"success": False, "message": "Le nouveau mot de passe doit etre different de l'ancien."}), 400
 
     user_id = session.get("user_id")
     db = get_db()
@@ -608,7 +632,7 @@ def esp32cam_config():
                 "success": True,
                 "device_id": cfg["device_id"],
                 "updated_at": cfg["updated_at"],
-                "frame_topic": ESP32CAM_SOURCE_LABEL, # Indique que le flux est direct WebSocket
+                "frame_topic": MQTT_TOPIC_ESP32CAM_FRAME,
                 "status_topic": MQTT_TOPIC_ESP32CAM_STATUS,
             }
         )
@@ -679,7 +703,7 @@ def esp32cam_recordings_cleanup():
         """
         SELECT id
         FROM camera_recordings
-        WHERE status != \'recording\'
+        WHERE status != 'recording'
         ORDER BY id DESC
         LIMIT -1 OFFSET ?
         """,
@@ -766,7 +790,7 @@ def esp32cam_recording_snapshot(recording_id):
 def esp32cam_capture_snapshot():
     frame = cam_stream_state.get_latest_frame()
     if frame is None:
-        return jsonify({"success": False, "message": "Aucune image recue depuis le flux"}), 409
+        return jsonify({"success": False, "message": "Aucune image recue depuis MQTT"}), 409
 
     db = get_db()
     db.execute(
@@ -803,9 +827,6 @@ def esp32cam_snapshot_image(snapshot_id):
     return Response(row["frame_data"], mimetype="image/jpeg")
 
 
-# La route /esp32cam/live n'est plus nécessaire pour le flux en temps réel direct
-# car le frontend recevra les frames via SocketIO directement.
-# Elle peut être conservée pour la lecture d'enregistrements si nécessaire.
 @app.route("/esp32cam/live", methods=["GET"])
 @login_required
 def esp32cam_live_proxy():
